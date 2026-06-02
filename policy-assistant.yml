@@ -1,0 +1,320 @@
+﻿app:
+  description: 高标准农田政策助手 - 基于知识库的政策问答工作流
+  icon: "🌾"
+  icon_background: "#16a34a"
+  mode: advanced-chat
+  name: 高标准农田AI政策助手
+  use_icon_as_answer_icon: false
+kind: app
+version: 0.2.0
+workflow:
+  conversation_variables: []
+  environment_variables: []
+  features:
+    file_upload:
+      allowed_file_extensions:
+        - .pdf
+        - .doc
+        - .docx
+      allowed_file_types:
+        - document
+      allowed_file_upload_methods:
+        - local_file
+      enabled: true
+      fileUploadConfig:
+        audio_file_size_limit: 50
+        batch_count_limit: 5
+        file_size_limit: 15
+        image_file_size_limit: 10
+        video_file_size_limit: 100
+        workflow_file_upload_limit: 10
+      image:
+        enabled: false
+      number_limits: 3
+    opening_statement: "您好！我是高标准农田AI政策助手。您可以向我咨询高标准农田建设的相关政策，也可以上传PDF或Word文件，我将基于文件内容为您解答。"
+    retriever_resource:
+      enabled: true
+    sensitive_word_avoidance:
+      enabled: false
+    speech_to_text:
+      enabled: false
+    suggested_questions:
+      - "高标准农田建设的标准是什么？"
+      - "申请高标准农田项目需要哪些条件？"
+      - "高标准农田的补贴政策有哪些？"
+    suggested_questions_after_answer:
+      enabled: true
+  graph:
+    edges:
+      # Start -> IF/ELSE 文件检查
+      - data:
+          isInIteration: false
+          sourceType: start
+          targetType: if-else
+        id: edge-start-to-conditional
+        source: start
+        sourceHandle: source
+        target: conditional-files
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # IF/ELSE true (有文件) -> 文档提取器
+      - data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: document-extractor
+        id: edge-conditional-to-extractor
+        source: conditional-files
+        sourceHandle: "true"
+        target: doc-extractor
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # 文档提取器 -> 模板拼接
+      - data:
+          isInIteration: false
+          sourceType: document-extractor
+          targetType: template-transform
+        id: edge-extractor-to-template
+        source: doc-extractor
+        sourceHandle: source
+        target: template-merge
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # IF/ELSE false (无文件) -> 模板拼接
+      - data:
+          isInIteration: false
+          sourceType: if-else
+          targetType: template-transform
+        id: edge-conditional-false-to-template
+        source: conditional-files
+        sourceHandle: "false"
+        target: template-merge
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # 模板拼接 -> 知识检索
+      - data:
+          isInIteration: false
+          sourceType: template-transform
+          targetType: knowledge-retrieval
+        id: edge-template-to-knowledge
+        source: template-merge
+        sourceHandle: source
+        target: knowledge-retrieval
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # 知识检索 -> LLM
+      - data:
+          isInIteration: false
+          sourceType: knowledge-retrieval
+          targetType: llm
+        id: edge-knowledge-to-llm
+        source: knowledge-retrieval
+        sourceHandle: source
+        target: llm-answer
+        targetHandle: target
+        type: custom
+        zIndex: 0
+      # LLM -> Answer
+      - data:
+          isInIteration: false
+          sourceType: llm
+          targetType: answer
+        id: edge-llm-to-answer
+        source: llm-answer
+        sourceHandle: source
+        target: answer
+        targetHandle: target
+        type: custom
+        zIndex: 0
+    nodes:
+      # ===== 开始节点 =====
+      - data:
+          desc: "接收用户问题和文件"
+          selected: false
+          title: "开始"
+          type: start
+          variables:
+            - label: "用户问题"
+              max_length: 5000
+              options: []
+              required: true
+              type: paragraph
+              variable: query
+            - label: "上传文件"
+              max_length: 100
+              options: []
+              required: false
+              type: file
+              variable: files
+        height: 126
+        id: start
+        position:
+          x: 80
+          y: 250
+        positionAbsolute:
+          x: 80
+          y: 250
+        type: custom
+        width: 244
+
+      # ===== IF/ELSE: 是否有文件 =====
+      - data:
+          cases:
+            - case_id: "has-files"
+              comparison_operator: "not empty"
+              id: case-has-files
+              logical_operator: and
+              value: ""
+              varType: "array[file]"
+              variable_selector:
+                - start
+                - files
+          desc: "判断用户是否上传了文件"
+          selected: false
+          title: "是否有文件"
+          type: if-else
+        height: 104
+        id: conditional-files
+        position:
+          x: 380
+          y: 250
+        positionAbsolute:
+          x: 380
+          y: 250
+        type: custom
+        width: 244
+
+      # ===== 文档提取器 =====
+      - data:
+          desc: "从上传的PDF/Word文件中提取文本"
+          selected: false
+          title: "文档提取器"
+          type: document-extractor
+          variable_selector:
+            - start
+            - files
+        height: 80
+        id: doc-extractor
+        position:
+          x: 680
+          y: 160
+        positionAbsolute:
+          x: 680
+          y: 160
+        type: custom
+        width: 244
+
+      # ===== 模板拼接 =====
+      - data:
+          desc: "将文档内容与用户问题拼接"
+          selected: false
+          template: "{{#context#}}\n\n用户问题：{{#start.query#}}"
+          title: "查询拼接"
+          type: template-transform
+          variables:
+            - value_selector:
+                - doc-extractor
+                - text
+              variable: context
+            - value_selector:
+                - start
+                - query
+              variable: start.query
+        height: 80
+        id: template-merge
+        position:
+          x: 980
+          y: 250
+        positionAbsolute:
+          x: 980
+          y: 250
+        type: custom
+        width: 244
+
+      # ===== 知识检索 =====
+      - data:
+          desc: "从高标准农田政策库中检索相关知识"
+          query_variable_selector:
+            - template-merge
+            - output
+          dataset_ids: []
+          multiple_retrieval_config:
+            reranking_enable: false
+            reranking_mode: null
+            top_k: 5
+            score_threshold_enabled: false
+            score_threshold: null
+          retrieval_mode: multiple
+          selected: false
+          title: "知识检索"
+          type: knowledge-retrieval
+        height: 132
+        id: knowledge-retrieval
+        position:
+          x: 1280
+          y: 250
+        positionAbsolute:
+          x: 1280
+          y: 250
+        type: custom
+        width: 244
+
+      # ===== LLM =====
+      - data:
+          context:
+            enabled: true
+            variable_selector:
+              - knowledge-retrieval
+              - result
+          desc: "基于知识库内容生成回答"
+          model:
+            completion_params:
+              temperature: 0.3
+              max_tokens: 2048
+            mode: chat
+            name: deepseek-chat
+            provider: deepseek
+          prompt_template:
+            - role: system
+              text: "你是高标准农田建设政策专家。请严格基于以下知识库内容严谨回答用户问题。若问题超出知识库范围，请如实说明无法回答，不要编造信息。回答应条理清晰、专业准确。"
+            - role: user
+              text: "{{#template-merge.output#}}"
+          selected: false
+          title: "LLM 推理"
+          type: llm
+          variables: []
+          vision:
+            enabled: false
+        height: 80
+        id: llm-answer
+        position:
+          x: 1580
+          y: 250
+        positionAbsolute:
+          x: 1580
+          y: 250
+        type: custom
+        width: 244
+
+      # ===== Answer =====
+      - data:
+          answer: "{{#llm-answer.text#}}"
+          desc: "输出最终答案"
+          selected: false
+          title: "输出答案"
+          type: answer
+          variables: []
+        height: 80
+        id: answer
+        position:
+          x: 1880
+          y: 250
+        positionAbsolute:
+          x: 1880
+          y: 250
+        type: custom
+        width: 244
